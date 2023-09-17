@@ -3,6 +3,7 @@
 A widget helping to learn and memorize Kanji wirtten in Python.
 
 It displays either a Japanese *kanji* character or a Japanese *radical*, its *kunyomi* and *onyomi* readings, and composite radicals as well.
+For each character, the JLPT classification is provided.
 Futhermore, it provides its *English meaning*.
 Just for fun, a *network throughput meter* has been built in as well. 
 And of course, the widget can be used as a mere *clock widget*. The widget rotates the displayed character automatically.
