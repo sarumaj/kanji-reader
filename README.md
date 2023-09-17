@@ -1,3 +1,12 @@
 # kanji-reader
 
-<video src='doc/demo.mp4' width=180/>
+A widget helping to learn and memorize Kanji wirtten in Python.
+
+Lexical data from [Kradinf](http://nihongo.monash.edu/kradinf.html) and [Kanjidic](http://nihongo.monash.edu/kanjidic2/index.html),and SVG files originating with [KanjiVG project](http://kanjivg.tagaini.net/) are being stored in a SQLite database and reused.
+
+Since tkinter is being used for GUI, currently transparent background is not working on Linux.
+
+## Usage
+
+https://github.com/sarumaj/kanji-reader/assets/71898979/4e87a037-709e-463c-90af-5bd7dbde8774
+
