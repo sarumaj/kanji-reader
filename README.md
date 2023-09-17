@@ -5,7 +5,7 @@ A widget helping to learn and memorize Kanji wirtten in Python.
 It displays either a Japanese *kanji* character or a Japanese *radical*, its *kunyomi* and *onyomi* readings, and composite radicals as well.
 Futhermore, it provides its *English meaning*.
 Just for fun, a *network throughput meter* has been built in as well. 
-And of course, the widget can be used as a mere *clock widget*.
+And of course, the widget can be used as a mere *clock widget*. The widget rotates the displayed character automatically.
 
 Lexical data from [Kradinf](http://nihongo.monash.edu/kradinf.html) and [Kanjidic](http://nihongo.monash.edu/kanjidic2/index.html), and SVG files originating with [KanjiVG project](http://kanjivg.tagaini.net/) are being stored in a SQLite database and reused.
 
