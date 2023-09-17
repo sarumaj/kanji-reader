@@ -11,6 +11,7 @@ Since tkinter is being used for GUI, currently transparent background is not wor
 https://github.com/sarumaj/kanji-reader/assets/71898979/4e87a037-709e-463c-90af-5bd7dbde8774
 
 ## Build & run
+
 ```
 git clone https://github.com/sarumaj/kanji-reader
 cd kanji-reader
