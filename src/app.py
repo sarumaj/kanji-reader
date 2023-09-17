@@ -35,13 +35,55 @@ CURR_DIR = Path(__file__).parent
 ROOT = CURR_DIR.parent
 ICON = ROOT / "data" / "img" / "ico" / "app.ico"
 LIB_DIR = ROOT / "lib"
-LIB_WIN_DIR = LIB_DIR / "win"
+
+# monkey patch for backward compability with Pillow 9.5.0
+Image.ANTIALIAS = Image.LANCZOS
+
+DISPLAY_COUNT = 0
+
+
+def get_current_screen_geometry():
+    pass
+
 
 if platform == "linux" or platform == "linux2":
-    pass
+    from Xlib import display
+    from Xlib.ext import randr
+    _display_ = display.Display(
+        os.environ.get("DISPLAY", ":0")
+    )
+    DISPLAY_COUNT = _display_.screen_count()
+
+    def get_current_screen_geometry():
+        resources = randr.get_screen_resources(_display_.screen(0).root)
+        for output in resources.outputs:
+            params = _display_.xrandr_get_output_info(
+                resources.outputs[0],
+                resources.config_timestamp
+            )
+            if not params.crtc:
+                continue
+            crtc = _display_.xrandr_get_crtc_info(
+                params.crtc,
+                resources.config_timestamp
+            )
+            yield (crtc.width, crtc.height)
+
 elif platform == "win32":
-    import wmi
-    os.environ['path'] += r';{}'.format(LIB_WIN_DIR)
+    os.environ['path'] += r';{}'.format(LIB_DIR / "win")
+    from wmi import WMI
+    _wmi_ = WMI()
+    DISPLAY_COUNT = len([
+        x for x in _wmi_.Win32_PnPEntity(ConfigManagerErrorCode=0) if 'DISPLAY' in str(x)
+    ])
+
+    def get_current_screen_geometry():
+        image = ImageGrab.grab(all_screens=False)
+        yield (image.width, image.height)
+
+else:
+    print(f"Platform {platform} is not supported")
+    os._exit(os.EX_OSERR)
 
 
 class AntialiasedCanvas(tk.Canvas):
@@ -135,13 +177,13 @@ class App():
             self.screen1 = (settings.get('screen1x'), settings.get('screen1y'))
         self.root = tk.Tk()
         self.onTop = False
-        if platform in ["linux", "linux2", "darwin"]:
-            # linux and os X
+        if platform in ["linux", "linux2"]:
             self.root.overrideredirect(1)
             self.root.wait_visibility(self.root)
+            self.root.config(bg='black')
             self.root.wm_attributes('-type', 'splash')
             self.opacity = .8
-            self.root.wm_attributes('-alpha', self.opacity)
+            self.root.attributes('-alpha', self.opacity)
         elif platform == "win32":
             self.root.wm_attributes('-transparentcolor', '#abcdef')
             self.root.config(bg='#abcdef')
@@ -152,7 +194,7 @@ class App():
         self.root.lift()
 
         self.root.protocol('WM_DELETE_WINDOW', self.withdraw)
-        if platform == "win32" and len([x for x in wmi.WMI().Win32_PnPEntity(ConfigManagerErrorCode=0) if 'DISPLAY' in str(x)]) > 2:
+        if DISPLAY_COUNT > 2:
             self.root.geometry("400x420+{}+{}".format(*self.screen1))
         else:
             self.root.geometry("400x420+{}+{}".format(*self.screen0))
@@ -187,16 +229,11 @@ class App():
         if self.root.winfo_exists():
             resolution_width = self.root.winfo_screenwidth()
             resolution_height = self.root.winfo_screenheight()
-            if features.check_feature(feature="xcb"):
-                try:
-                    image = ImageGrab.grab(xdisplay=None)
-                except OSError as e:
-                    print(e)
-                else:
-                    real_width, real_height = image.width, image.height
-                    ratio_width = real_width / resolution_width
-                    ratio_height = real_height / resolution_height
-                    return (real_width, real_height, ratio_width, ratio_height)
+            try:
+                width, height = next(get_current_screen_geometry())
+            except StopIteration:
+                return tuple([0] * 4)
+            return (width, height, width / resolution_width, height / resolution_height)
         return tuple([0] * 4)
 
     def mouse_motion(self, event):
