@@ -40,4 +40,4 @@ jobs:
           generate_release_notes: true
           prerelease: false
           draft: false
-          files: "dist/kanjireader_${{ github.ref_name }}_setup.exe"
+          files: "dist/kanjireader_setup.exe"
