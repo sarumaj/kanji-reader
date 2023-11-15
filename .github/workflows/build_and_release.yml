@@ -7,14 +7,14 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build_and_release:
     strategy:
       fail-fast: false
       matrix:
         python: [3.11]
         os: [windows-latest]
     runs-on: ${{ matrix.os }}
-    name: Build kanjireader
+    name: Build and release kanjireader
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -34,18 +34,10 @@ jobs:
           path: "scripts/setup.iss"
           options: /DVersion="${{ github.ref_name }}"
 
-  release:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    name: Release kanjireader
-    needs: build
-    steps:
       - name: Create release and upload
-        uses: meeDamian/github-release@2.0
+        uses: softprops/action-gh-release@v1
         with:
-          allow_override: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: "kanjireader_${{ github.ref_name }}_setup_.exe:dist/kr_setup.exe"
+          generate_release_notes: true
+          prerelease: false
+          draft: false
+          files: "dist/kanjireader_${{ github.ref_name }}_setup.exe"
