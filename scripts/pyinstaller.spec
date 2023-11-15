@@ -11,7 +11,7 @@ a = Analysis(
         ('../src/kanjidic.db', '.'), 
         ('../src/data/img/ico/app.ico', 'data/img/ico') 
     ] + collect_data_files('cairosvg') + collect_data_files('cairocffi'),
-    hiddenimports=['wmi', 'pystray', 'tkinter', 'PIL.ImageTk', 'PIL._tkinter_finder'],
+    hiddenimports=['wmi', 'pywin32', 'pystray', 'tkinter', 'PIL.ImageTk', 'PIL._tkinter_finder'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

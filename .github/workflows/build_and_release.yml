@@ -32,7 +32,7 @@ jobs:
         uses: Minionguyjpro/Inno-Setup-Action@v1.1.0
         with:
           path: "scripts/setup.iss"
-          options: /DVersion="${{ github.ref_name }}"
+          options: /DMyAppVersion="${{ github.ref_name }}"
 
       - name: Create release and upload
         uses: softprops/action-gh-release@v1

@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "KanjiReader"
-#define MyAppVersion "{{#Version}}"
+; #define MyAppVersion "v0.0.0"
 #define MyAppPublisher "Dawid Ciepiela"
 #define MyAppExeName "kanjireader.exe"
 
@@ -12,7 +12,7 @@
 AppId={{C367BA1F-BF2F-4278-84D1-3E7042BB7999}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-;AppVerName={#MyAppName} {#MyAppVersion}
+; AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
