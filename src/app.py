@@ -1,16 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Jan  3 11:37:05 2021
-
-@author: theodave
-"""
-
 # -*- coding: utf-8 -*-
 """
 Created on Tue Oct 27 08:17:58 2020
 
-@author: uid40324
+@author: dawid
 """
 
 
@@ -31,10 +23,11 @@ import time
 import tkinter as tk
 import os
 from pathlib import Path
+
 CURR_DIR = Path(__file__).parent
-ROOT = CURR_DIR.parent
-ICON = ROOT / "data" / "img" / "ico" / "app.ico"
-LIB_DIR = ROOT / "lib"
+ICON = CURR_DIR / "data" / "img" / "ico" / "app.ico"
+LIB_DIR = CURR_DIR / "lib"
+
 
 # monkey patch for backward compability with Pillow 9.5.0
 Image.ANTIALIAS = Image.LANCZOS
@@ -46,7 +39,7 @@ def get_current_screen_geometry():
     pass
 
 
-if platform == "linux" or platform == "linux2":
+if platform in ("linux", "linux2"):
     from Xlib import display
     from Xlib.ext import randr
     _display_ = display.Display(

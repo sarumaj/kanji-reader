@@ -2,7 +2,7 @@
 """
 Created on Fri Jan  1 21:32:07 2021
 
-@author: theodave
+@author: dawid
 """
 
 import xml.etree.ElementTree as ET
