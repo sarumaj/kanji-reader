@@ -28,10 +28,10 @@ jobs:
           spec: "scripts/pyinstaller.spec"
           requirements: "requirements.txt"
 
-      - name: Compile .ISS to .EXE Installer
+      - name: Compile install wizard
         uses: Minionguyjpro/Inno-Setup-Action@v1.1.0
         with:
           path: "scripts/setup.iss"
-          options: /DVersion="${{ github.ref_name }}"
+          options: "/DVersion="${{ github.ref_name }}""
 
-      - run: dir dist/
+      - run: dir -r dist/
