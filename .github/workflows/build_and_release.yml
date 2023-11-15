@@ -34,4 +34,8 @@ jobs:
           path: "scripts/setup.iss"
           options: /DVersion="${{ github.ref_name }}"
 
-      - run: dir -r dist/
+      - uses: meeDamian/github-release@2.0
+        with:
+          allow_override: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: "kanjireader_${{ github.ref_name }}_setup_.exe:dist/kr_setup.exe"
