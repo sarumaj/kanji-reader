@@ -20,9 +20,9 @@ AllowNoIcons=yes
 ; Remove the following line to run in administrative install mode (install for all users.)
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-OutputDir=..\dist
+OutputDir=dist
 OutputBaseFilename=kr_setup
-SetupIconFile=..\data\img\ico\app.ico
+SetupIconFile=data\img\ico\app.ico
 UninstallDisplayIcon={app}\data\img\ico\app.ico
 Compression=lzma
 SolidCompression=yes
