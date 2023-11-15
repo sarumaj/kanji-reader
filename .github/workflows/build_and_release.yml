@@ -1,0 +1,29 @@
+name: build_and_release
+on:
+  push:
+    tags:
+      - "v*"
+permissions:
+  contents: write
+
+jobs:
+  build_and_release:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: [3.11]
+        os: [windows-latest]
+    runs-on: ${{ matrix.os }}
+    name: Build and release gh-gr
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Executable
+        uses: sayyid5416/pyinstaller@v1
+        with:
+          python_ver: ${{ matrix.python }}
+          spec: "scripts/pyinstaller.spec"
+          requirements: "requirements.txt"
