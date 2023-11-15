@@ -6,6 +6,12 @@
 #define MyAppPublisher "Dawid Ciepiela"
 #define MyAppExeName "kanjireader.exe"
 
+[Code]
+function GetScriptDir(Param: String): String;
+begin
+  Result := ExtractFilePath(Param);
+end;
+
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
@@ -20,9 +26,9 @@ AllowNoIcons=yes
 ; Remove the following line to run in administrative install mode (install for all users.)
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-OutputDir=.\dist
+OutputDir={code:GetScriptDir}\..\dist
 OutputBaseFilename=kr_setup
-SetupIconFile=.\data\img\ico\app.ico
+SetupIconFile={code:GetScriptDir}\..\data\img\ico\app.ico
 UninstallDisplayIcon={app}\data\img\ico\app.ico
 Compression=lzma
 SolidCompression=yes
@@ -39,8 +45,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startentry"; Description: "{cm:CreateStartupEntry}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: ".\dist\kanjireader\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: ".\dist\kanjireader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{code:GetScriptDir}\..\dist\kanjireader\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{code:GetScriptDir}\..\dist\kanjireader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
