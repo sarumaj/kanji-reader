@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "KanjiReader"
-#define MyAppVersion "{#Version}"
+#define MyAppVersion "{{#Version}}"
 #define MyAppPublisher "Dawid Ciepiela"
 #define MyAppExeName "kanjireader.exe"
 
