@@ -34,7 +34,8 @@ jobs:
           path: "scripts/setup.iss"
           options: /DVersion="${{ github.ref_name }}"
 
-      - uses: meeDamian/github-release@2.0
+      - name: Create release and upload
+        uses: meeDamian/github-release@2.0
         with:
           allow_override: true
           token: ${{ secrets.GITHUB_TOKEN }}
