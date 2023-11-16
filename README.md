@@ -30,4 +30,4 @@ python scripts/build_db.py
 python src/app.py
 ```
 
-Alternatively, a Windows installer is available as [release](https://github.com/sarumaj/kanji-reader/releases/latest).
+Alternatively, a Windows installer is available as a [release](https://github.com/sarumaj/kanji-reader/releases/latest).
