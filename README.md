@@ -1,3 +1,7 @@
+[![build_and_release](https://github.com/sarumaj/kanji-reader/actions/workflows/build_and_release.yml/badge.svg)](https://github.com/sarumaj/kanji-reader/actions/workflows/build_and_release.yml)
+
+---
+
 # kanji-reader
 
 A widget helping to learn and memorize Kanji wirtten in Python.
