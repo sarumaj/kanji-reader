@@ -1,16 +1,18 @@
-block_cipher = None
 from PyInstaller.utils.hooks import collect_data_files
+from sys import platform
 
+block_cipher = None
 
 a = Analysis(
     ['../src/app.py'],
     pathex=[],
-    binaries=[],
+    binaries=[
+        ('../src/lib/win/*.dll', 'lib/win')
+    ] if platform == 'win32' else [],
     datas=[ 
-        ('../src/lib/win/*.dll', 'lib/win'), 
         ('../src/kanjidic.db', '.'), 
         ('../src/data/img/ico/app.ico', 'data/img/ico') 
-    ] + collect_data_files('cairosvg') + collect_data_files('cairocffi'),
+    ] + collect_data_files('cairosvg') + collect_data_files('cairocffi') + collect_data_files('pywin32'),
     hiddenimports=['wmi', 'pywin32', 'pystray', 'tkinter', 'PIL.ImageTk', 'PIL._tkinter_finder'],
     hookspath=[],
     hooksconfig={},

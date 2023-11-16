@@ -12,7 +12,7 @@ import pystray
 from pystray import MenuItem as item
 import psutil
 import textwrap
-from PIL import Image, ImageTk, ImageDraw, ImageFilter, ImageGrab, features
+from PIL import Image, ImageTk, ImageDraw, ImageFilter, ImageGrab
 import io
 import cairosvg
 from sys import platform
@@ -199,8 +199,7 @@ class App():
         self.root.bind("<B1-Motion>", self.mouse_motion)
         self.root.bind("<Button-1>", self.mouse_press)
         self.root.bind("<ButtonRelease-1>", self.mouse_release)
-        self.compound = lambda ev, s=self: [s.reset(), setattr(
-            s, 'after_id_2', s.root.after(500, s.fadeOut))]
+        self.compound = lambda ev, s=self: [s.reset(), setattr(s, 'after_id_2', s.root.after(500, s.fadeOut))]
         self.root.bind("<Leave>", self.compound)
         self.root.bind("<FocusOut>", self.compound)
         self.root.bind("<Enter>", self.awake)
