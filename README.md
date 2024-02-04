@@ -1,4 +1,6 @@
 [![build_and_release](https://github.com/sarumaj/kanji-reader/actions/workflows/build_and_release.yml/badge.svg)](https://github.com/sarumaj/kanji-reader/actions/workflows/build_and_release.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/sarumaj/kanji-reader?logo=github)](https://github.com/sarumaj/kanji-reader/releases/latest)
+[![Libraries.io dependency status for GitHub repo](https://img.shields.io/librariesio/github/sarumaj/kanji-reader)](https://github.com/sarumaj/kanji-reader/blob/main/requirements.txt)
 
 ---
 
