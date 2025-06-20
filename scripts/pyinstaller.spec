@@ -9,9 +9,9 @@ a = Analysis(
     binaries=[
         ('../src/lib/win/*.dll', 'lib/win')
     ] if platform == 'win32' else [],
-    datas=[ 
-        ('../src/kanjidic.db', '.'), 
-        ('../src/data/img/ico/app.ico', 'data/img/ico') 
+    datas=[
+        ('../src/kanjidic.db', '.'),
+        ('../src/data/img/ico/app.ico', 'data/img/ico')
     ] + collect_data_files('cairosvg') + collect_data_files('cairocffi') + collect_data_files('pywin32'),
     hiddenimports=['wmi', 'pywin32', 'pystray', 'tkinter', 'PIL.ImageTk', 'PIL._tkinter_finder'],
     hookspath=[],
@@ -25,14 +25,14 @@ a = Analysis(
 )
 
 pyz = PYZ(
-    a.pure, 
-    a.zipped_data,     
+    a.pure,
+    a.zipped_data,
     cipher=block_cipher
 )
-          
+
 exe = EXE(
     pyz,
-    a.scripts, 
+    a.scripts,
     [],
     exclude_binaries=True,
     name='kanjireader',
@@ -47,12 +47,12 @@ exe = EXE(
     entitlements_file=None,
     icon='../src/data/img/ico/app.ico'
 )
-          
+
 coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,
-    a.datas, 
+    a.datas,
     strip=False,
     upx=True,
     upx_exclude=[],

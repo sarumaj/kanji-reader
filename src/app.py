@@ -35,10 +35,6 @@ Image.ANTIALIAS = Image.LANCZOS
 DISPLAY_COUNT = 0
 
 
-def get_current_screen_geometry():
-    pass
-
-
 if platform in ("linux", "linux2"):
     from Xlib import display
     from Xlib.ext import randr
@@ -77,6 +73,9 @@ elif platform == "win32":
 else:
     print(f"Platform {platform} is not supported")
     os._exit(os.EX_OSERR)
+
+    def get_current_screen_geometry():
+        pass
 
 
 class AntialiasedCanvas(tk.Canvas):
@@ -144,19 +143,19 @@ class App():
                 return d
             conn.row_factory = dict_factory
             cur = conn.cursor()
-            cur.execute('''SELECT frequency, 
-                img_0, img_1, img_2, img_3, img_4, img_5, img_6, img_7, img_8, img_9, 
+            cur.execute('''SELECT frequency,
+                img_0, img_1, img_2, img_3, img_4, img_5, img_6, img_7, img_8, img_9,
                 bytes,
                 cp_type_ucs,
-                literal, 
-                grade, 
-                jlpt, 
-                stroke_count, 
-                radical_name, 
-                meaning_type_en, 
-                nanori, 
+                literal,
+                grade,
+                jlpt,
+                stroke_count,
+                radical_name,
+                meaning_type_en,
+                nanori,
                 radicals,
-                reading_type_ja_kun, 
+                reading_type_ja_kun,
                 reading_type_ja_on
             FROM library
             ORDER BY CAST(stroke_count AS INT), CAST(frequency AS INT) DESC;''')
@@ -243,7 +242,6 @@ class App():
             if hasattr(self, "after_id"):
                 self.root.after_cancel(self.after_id)
                 delattr(self, 'after_id')
-            count = time.time()
             App.x, App.y = event.x, event.y
 
     def mouse_release(self, event):
@@ -258,7 +256,7 @@ class App():
                 self.screen1 = (new_x, new_y)
             with sqlite3.connect(self.database) as conn:
                 cur = conn.cursor()
-                cur.execute('''REPLACE INTO settings(idx, choice, screen0x, screen0y, screen1x, screen1y) 
+                cur.execute('''REPLACE INTO settings(idx, choice, screen0x, screen0y, screen1x, screen1y)
                 VALUES(1, {}, {});'''.format(
                     self.choice,
                     ', '.join(map(str, self.screen0 + self.screen1))
@@ -297,7 +295,7 @@ class App():
             for attr in ["menu"]:
                 try:
                     getattr(self, attr).destroy()
-                except:
+                except Exception:
                     pass
 
             def onclick(event):
@@ -470,7 +468,7 @@ class App():
                 if ret:
                     try:
                         return base64.b64decode(ret.encode()).decode()
-                    except:
+                    except Exception:
                         return ret
                 return ''
 
@@ -510,7 +508,7 @@ class App():
             )
             '''
             quit button
-             
+
             '''
             self.button_quit = self.canvas.create_oval(
                 (self.root.winfo_width()-50)/2,
@@ -543,7 +541,7 @@ class App():
 
             '''
             main
-            
+
             '''
             self.canvas.create_oval(
                 (self.root.winfo_width()-350)/2,
@@ -775,7 +773,7 @@ class App():
                 )
             '''
             prev button
-            
+
             '''
             self.button_prev = self.canvas.create_oval(
                 (self.root.winfo_width()-50)/2 - 150,
@@ -811,7 +809,7 @@ class App():
 
             '''
             next button
-            
+
             '''
             self.button_next = self.canvas.create_oval(
                 (self.root.winfo_width()-50)/2 + 150,
@@ -897,7 +895,7 @@ class App():
                 self.choice = 0
             with sqlite3.connect(self.database) as conn:
                 cur = conn.cursor()
-                cur.execute('''REPLACE INTO settings(idx, choice, screen0x, screen0y, screen1x, screen1y) 
+                cur.execute('''REPLACE INTO settings(idx, choice, screen0x, screen0y, screen1x, screen1y)
                 VALUES(1, {}, {});'''.format(
                     self.choice,
                     ', '.join(map(str, self.screen0 + self.screen1))
@@ -917,7 +915,7 @@ class App():
                 self.choice = len(self.data) - 1
             with sqlite3.connect(self.database) as conn:
                 cur = conn.cursor()
-                cur.execute('''REPLACE INTO settings(idx, choice, screen0x, screen0y, screen1x, screen1y) 
+                cur.execute('''REPLACE INTO settings(idx, choice, screen0x, screen0y, screen1x, screen1y)
                 VALUES(1, {}, {});'''.format(
                     self.choice,
                     ', '.join(map(str, self.screen0 + self.screen1))
@@ -1093,12 +1091,12 @@ class App():
                     re.U
                 )
             )
-        except:
+        except Exception:
             self.search_phrase = exception_msg
         if self.search_phrase and self.menu.winfo_exists():
             try:
                 self.menu.delete("Search")
-            except:
+            except Exception:
                 ...
             self.clipboard_menu = tk.Menu(self.root, tearoff=0)
             if self.search_phrase != exception_msg:

@@ -1,516 +1,579 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Jan  1 21:32:07 2021
-
-@author: dawid
-"""
-
 import xml.etree.ElementTree as ET
 import re
-import os
-import progressbar
+import tqdm
 import sqlite3
 import base64
-import json
+import logging
 from pathlib import Path
-
-CURR_DIR = Path(__file__).parent
-ROOT = CURR_DIR.parent
-SRC_PATH = ROOT / "src"
-IMG_PATH = ROOT / "data" / "img"
-SVG_PATH = IMG_PATH / "svg"
-LEX_PATH = ROOT / "data" / "lex"
-
-# target location
-DB_PATH = SRC_PATH / "kanjidic.db"
+from typing import Dict, List, Any, Iterator
+from dataclasses import dataclass, asdict
 
 
-def SVG_FILES(): return SVG_PATH.glob("*.svg")  # svg files with stroke order
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 
-# lex files
-KANJIDIC2 = LEX_PATH / "kanjidic2.xml"
-KRADFILE2 = LEX_PATH / "kradfile2.utf8"
-RADKFILEX = LEX_PATH / "radkfilex.utf8"
+@dataclass
+class Paths:
+    """
+    Data class to hold all file and directory paths used in the database build process.
 
-# read kradfile2 to get radicals for each kanji
-radicals = {
-    next(iter(line.split(':'))).strip(): next(iter(line.split(':')[::-1])).split()
-    for line in KRADFILE2.read_text().splitlines()
-    if not line.startswith('#') and next(iter(line.split(':'))).strip()
-}
-print("-"*30)
-print("BEGIN OF RADICALS")
-tuple(print(k, v) for k, v in radicals.items())
-print("END OF RADICALS")
-print("-"*30)
-
-# read radkfilex to extend the list of kanjis and their radicals
-clusters = [
-    block for block in '\n'.join([
-        line for line in RADKFILEX.read_text().splitlines() if not line.startswith('#')
-    ]).split('$') if block
-]
-for cluster in clusters:
-    block = iter(re.split(r"[0-9]", re.sub(r"[\n ]", '', cluster)))
-    radical = next(block)
-    kanjis = next(block)
-    for kanji in kanjis:
-        if radical not in radicals.get(kanji, []):
-            radicals.update({kanji: radicals.get(kanji, []) + [radical]})
-
-print("-"*30)
-print("BEGIN OF CLUSTERS")
-tuple(print(cluster) for cluster in clusters)
-print("END OF CLUSTERS")
-print("-"*30)
-
-# read kanjidic
-tree = ET.parse(KANJIDIC2)
-root = tree.getroot()
-
-# True: Primary key
-# False: Allow NULL as default
-properties = json.loads((CURR_DIR / "conf.json").read_text())
-print("-"*30)
-print("BEGIN OF PROPERTIES")
-tuple(print(k, v) for k, v in properties.items())
-print("END OF PROPERTIES")
-print("-"*30)
-
-# create library table
-with sqlite3.connect(DB_PATH) as conn:
-    cur = conn.cursor()
-    cur.execute('''DROP TABLE IF EXISTS library;''')
-    cur.execute('''DROP TABLE IF EXISTS settings;''')
-    cur.execute('''CREATE TABLE "settings" (
-	"choice"	INTEGER,
-	"screen0x"	INTEGER,
-	"screen0y"	INTEGER,
-	"screen1x"	INTEGER,
-	"screen1y"	INTEGER,
-	"idx"	INTEGER UNIQUE,
-	PRIMARY KEY("idx" AUTOINCREMENT)
-);''')
-    cur.execute('''INSERT INTO settings (choice, screen0x, screen0y, screen1x, screen1y)
-    VALUES (0,0,0,0,0)''')
-    cur.execute('''CREATE TABLE library (
-        {} , PRIMARY KEY ({})
-    );'''.format(
-        '\n\t,'.join((
-            f"{key} text NOT NULL" if val else f"{key} text" if 'img' not in key else f"{key} blob"
-            for key, val in properties.items()
-        )),
-        ', '.join((key for key, val in properties.items() if val))
-    ))
+    This centralizes path management and provides type safety for path operations.
+    All paths are relative to the script location and follow the project structure.
+    """
+    curr_dir: Path  # Current script directory
+    root: Path      # Project root directory
+    src_path: Path  # Source code directory
+    img_path: Path  # Image assets directory
+    svg_path: Path  # SVG stroke order files directory
+    lex_path: Path  # Lexical data files directory
+    db_path: Path   # Output database file path
 
 
-def sqlparser(**kwargs):  # parse data before inserting into the SQL DB
-    '''
-    Convert:
-        list --> basse64 encoded str joined by new line,
-        non ascii str --> base64 encoded str.
-    '''
-    return {
-        key: (
-            base64.b64encode('\n'.join(val).encode()).decode()
-            if isinstance(val, list) else
-            val if len(val) == len(val.encode()) else
-            base64.b64encode(val.encode()).decode())
-        for key, val in kwargs.items() if val
-    }
+@dataclass
+class DatabaseSchema:
+    """
+    Data class defining the database schema configuration.
+
+    This replaces the conf.json file and defines which fields should be included
+    in the library table. Each field has a boolean value:
+    - True: Field is a primary key (NOT NULL constraint)
+    - False: Field allows NULL values (optional field)
+
+    Special handling exists for 'img' fields which are stored as BLOB data
+    for binary image content.
+    """
+    # Primary key fields (NOT NULL)
+    literal: bool = True
+    cp_type_ucs: bool = True
+
+    # Basic character information
+    bytes: bool = False
+
+    # Codepoint information
+    cp_type_jis208: bool = False
+    cp_type_jis212: bool = False
+    cp_type_jis213: bool = False
+
+    # Radical information
+    rad_type_classical: bool = False
+    rad_type_nelson_c: bool = False
+
+    # Miscellaneous information
+    grade: bool = False
+    stroke_count: bool = False
+    frequency: bool = False
+    radical_name: bool = False
+    jlpt: bool = False
+
+    # Variant information
+    var_type_jis208: bool = False
+    var_type_jis212: bool = False
+    var_type_jis213: bool = False
+    var_type_deroo: bool = False
+    var_type_njecd: bool = False
+    var_type_s_h: bool = False
+    var_type_nelson_c: bool = False
+    var_type_oneill: bool = False
+    var_type_ucs: bool = False
+
+    # Dictionary references
+    dr_type_nelson_c: bool = False
+    dr_type_nelson_n: bool = False
+    dr_type_halpern_njecd: bool = False
+    dr_type_halpern_kkd: bool = False
+    dr_type_halpern_kkld: bool = False
+    dr_type_halpern_kkld_2ed: bool = False
+    dr_type_heisig: bool = False
+    dr_type_heisig6: bool = False
+    dr_type_gakken: bool = False
+    dr_type_oneill_names: bool = False
+    dr_type_oneill_kk: bool = False
+    dr_type_moro: bool = False
+    dr_type_henshall: bool = False
+    dr_type_sh_kk: bool = False
+    dr_type_sh_kk2: bool = False
+    dr_type_sakade: bool = False
+    dr_type_jf_cards: bool = False
+    dr_type_henshall3: bool = False
+    dr_type_tutt_cards: bool = False
+    dr_type_crowley: bool = False
+    dr_type_kanji_in_context: bool = False
+    dr_type_busy_people: bool = False
+    dr_type_kodansha_compact: bool = False
+    dr_type_maniette: bool = False
+
+    # Query codes
+    qc_type_skip: bool = False
+    qc_type_sh_desc: bool = False
+    qc_type_four_corner: bool = False
+    qc_type_deroo: bool = False
+    qc_type_misclass: bool = False
+
+    # Readings
+    reading_type_ja_on: bool = False
+    reading_type_ja_kun: bool = False
+    reading_type_pinyin: bool = False
+    reading_type_korean_r: bool = False
+    reading_type_korean_h: bool = False
+    reading_type_vietnam: bool = False
+
+    # Meanings
+    meaning_type_en: bool = False
+    meaning_type_fr: bool = False
+    meaning_type_de: bool = False
+    meaning_type_es: bool = False
+    meaning_type_pt: bool = False
+
+    # Additional data
+    nanori: bool = False
+    radicals: bool = False
+    svg: bool = False
+
+    # Image data (BLOB fields)
+    img_0: bool = False
+    img_1: bool = False
+    img_2: bool = False
+    img_3: bool = False
+    img_4: bool = False
+    img_5: bool = False
+    img_6: bool = False
+    img_7: bool = False
+    img_8: bool = False
+    img_9: bool = False
 
 
-characters = root.findall('character')
-# follow up on progress
-with progressbar.ProgressBar(max_value=len(characters)) as bar:
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.cursor()
-        for idx, character in enumerate(characters):
-            char = {}
-            '''
-            The character itself in UTF8 coding.
-            '''
-            char['literal'] = getattr(character.find("literal"), 'text', '')
-            '''
-            Bytes of unicode encoding.
-            '''
-            char['bytes'] = '/'.join(
+class PathManager:
+    """Manages file and directory paths for the database build process."""
+
+    def __init__(self):
+        self.paths = self._setup_paths()
+
+    def _setup_paths(self) -> Paths:
+        """Setup all necessary file paths for the database build process."""
+        curr_dir = Path(__file__).parent
+        root = curr_dir.parent
+        src_path = root / "src"
+        img_path = src_path / "data" / "img"
+        svg_path = img_path / "svg"
+        lex_path = src_path / "data" / "lex"
+        db_path = src_path / "kanjidic.db"
+
+        return Paths(
+            curr_dir=curr_dir,
+            root=root,
+            src_path=src_path,
+            img_path=img_path,
+            svg_path=svg_path,
+            lex_path=lex_path,
+            db_path=db_path
+        )
+
+    def get_svg_files(self) -> Iterator[Path]:
+        """Get all SVG files with stroke order from the specified directory."""
+        return self.paths.svg_path.glob("*.svg")
+
+
+class RadicalLoader:
+    """Handles loading and processing of radical data from various sources."""
+
+    def __init__(self, lex_path: Path):
+        self.lex_path = lex_path
+
+    def load_from_kradfile2(self) -> Dict[str, List[str]]:
+        """Load radicals from kradfile2.utf8 file."""
+        kradfile2_path = self.lex_path / "kradfile2.utf8"
+        radicals: Dict[str, List[str]] = {}
+
+        for line in kradfile2_path.read_text().splitlines():
+            if not line.startswith('#') and line.strip():
+                parts = line.split(':')
+                if len(parts) >= 2:
+                    kanji = parts[0].strip()
+                    radical_list = parts[-1].split()
+                    radicals[kanji] = radical_list
+
+        logger.info("-" * 30)
+        logger.info("BEGIN OF RADICALS")
+        for k, v in radicals.items():
+            logger.info(f"{k} {v}")
+        logger.info("END OF RADICALS")
+        logger.info("-" * 30)
+
+        return radicals
+
+    def extend_from_radkfilex(self, radicals: Dict[str, List[str]]) -> Dict[str, List[str]]:
+        """Extend radicals dictionary using radkfilex.utf8 file."""
+        radkfilex_path = self.lex_path / "radkfilex.utf8"
+        clusters: List[str] = []
+
+        for line in radkfilex_path.read_text().splitlines():
+            if not line.startswith('#'):
+                clusters.append(line)
+
+        clusters = [
+            block for block in '\n'.join(clusters).split('$')
+            if block
+        ]
+
+        for cluster in clusters:
+            block = iter(re.split(r"[0-9]", re.sub(r"[\n ]", '', cluster)))
+            radical = next(block)
+            kanjis = next(block)
+            for kanji in kanjis:
+                if radical not in radicals.get(kanji, []):
+                    radicals[kanji] = radicals.get(kanji, []) + [radical]
+
+        logger.info("-" * 30)
+        logger.info("BEGIN OF CLUSTERS")
+        for cluster in clusters:
+            logger.info(cluster)
+        logger.info("END OF CLUSTERS")
+        logger.info("-" * 30)
+
+        return radicals
+
+    def load_all_radicals(self) -> Dict[str, List[str]]:
+        """Load and extend radicals from all sources."""
+        logger.info("Loading radicals from kradfile2...")
+        radicals = self.load_from_kradfile2()
+
+        logger.info("Extending radicals from radkfilex...")
+        radicals = self.extend_from_radkfilex(radicals)
+
+        logger.info(f"Loaded radicals for {len(radicals)} kanji")
+        return radicals
+
+
+class DatabaseManager:
+    """Manages database creation and operations."""
+
+    def __init__(self, db_path: Path, schema: DatabaseSchema):
+        self.db_path = db_path
+        self.schema = schema
+
+    def create_tables(self) -> None:
+        """Create the database tables for the kanji database."""
+        logger.info("Creating database tables...")
+
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
+
+            # Drop existing tables
+            cur.execute('DROP TABLE IF EXISTS library;')
+            cur.execute('DROP TABLE IF EXISTS settings;')
+
+            # Create settings table
+            cur.execute(
+                'CREATE TABLE "settings" ('
+                '    "choice"    INTEGER,'
+                '    "screen0x"    INTEGER,'
+                '    "screen0y"    INTEGER,'
+                '    "screen1x"    INTEGER,'
+                '    "screen1y"    INTEGER,'
+                '    "idx"    INTEGER UNIQUE,'
+                '    PRIMARY KEY("idx" AUTOINCREMENT)'
+                ');'
+            )
+
+            # Insert default settings
+            cur.execute(
+                'INSERT INTO settings (choice, screen0x, screen0y, screen1x, screen1y)'
+                'VALUES (0,0,0,0,0)'
+            )
+
+            # Create library table
+            column_descriptors: List[str] = []
+            schema_dict = asdict(self.schema)
+
+            for field_name, is_primary_key in schema_dict.items():
+                if is_primary_key:
+                    column_descriptors.append(f"{field_name} text NOT NULL")
+                elif 'img' in field_name:
+                    column_descriptors.append(f"{field_name} blob")
+                else:
+                    column_descriptors.append(f"{field_name} text")
+
+            primary_keys = [field_name for field_name, is_primary_key in schema_dict.items() if is_primary_key]
+            cur.execute(
                 (
-                    hex(b) for b in list(
-                        getattr(
-                            character.find("literal"),
-                            'text',
-                            ''
-                        ).encode('utf-8')
-                    )
+                    'CREATE TABLE library ('
+                    '    {columns},'
+                    '    PRIMARY KEY ({primary_keys})'
+                    ');'
+                ).format(
+                    columns=',\n    '.join(column_descriptors),
+                    primary_keys=', '.join(primary_keys)
                 )
             )
-            '''
-            The cp_value contains the codepoint of the character in a particular
-        	standard. The standard will be identified in the cp_type attribute.
-         
-        	The cp_type attribute states the coding standard applying to the
-        	element. The values assigned so far are:
-        		jis208 - JIS X 0208-1997 - kuten coding (nn-nn)
-        		jis212 - JIS X 0212-1990 - kuten coding (nn-nn)
-        		jis213 - JIS X 0213-2000 - kuten coding (p-nn-nn)
-        		ucs - Unicode 4.0 - hex coding (4 or 5 hexadecimal digits)
-            '''
-            for val in getattr(character.find("codepoint"), 'findall', lambda *args: [])('cp_value'):
-                char['cp_type_{}'.format(
-                    getattr(
-                        val,
-                        'attrib',
-                        {}
-                    ).get('cp_type')
-                )] = getattr(val, 'text', '')
-            '''
-            The radical number, in the range 1 to 214. The particular
-        	classification type is stated in the rad_type attribute.
 
-        	The rad_type attribute states the type of radical classification.
-        		classical - based on the system first used in the KangXi Zidian.
-        		The Shibano "JIS Kanwa Jiten" is used as the reference source.
-        		nelson_c - as used in the Nelson "Modern Japanese-English 
-        		Character Dictionary" (i.e. the Classic, not the New Nelson).
-        		This will only be used where Nelson reclassified the kanji.
-            '''
-            for val in getattr(character.find("radical"), 'findall', lambda *args: [])('rad_value'):
-                char['rad_type_{}'.format(
-                    getattr(
-                        val,
-                        'attrib',
-                        {}
-                    ).get('rad_type')
-                )] = getattr(val, 'text', '')
-            '''
-            misc (grade?, stroke_count+, variant*, freq?, rad_name*,jlpt?)
-            '''
-            misc = character.find('misc')
-            '''
-            The kanji grade level. 1 through 6 indicates a Kyouiku kanji
-        	and the grade in which the kanji is taught in Japanese schools. 
-        	8 indicates it is one of the remaining Jouyou Kanji to be learned 
-        	in junior high school. 9 indicates it is a Jinmeiyou (for use 
-        	in names) kanji which in addition  to the Jouyou kanji are approved 
-        	for use in family name registers and other official documents. 10
-        	also indicates a Jinmeiyou kanji which is a variant of a
-        	Jouyou kanji.
-            '''
-            char['grade'] = getattr(
-                getattr(
-                    misc,
-                    'find',
-                    lambda *args: None
-                )('grade'),
-                'text',
-                ''
-            )
-            '''
-            The stroke count of the kanji, including the radical. If more than 
-        	one, the first is considered the accepted count, while subsequent ones 
-        	are common miscounts.
-            '''
-            char['stroke_count'] = getattr(
-                getattr(
-                    misc,
-                    'find',
-                    lambda *args: None
-                )('stroke_count'),
-                'text',
-                ''
-            )
-            '''
-            Either a cross-reference code to another kanji, usually regarded as a 
-        	variant, or an alternative indexing code for the current kanji.
-        	The type of variant is given in the var_type attribute.
+        logger.info("Database tables created successfully")
 
-        	The var_type attribute indicates the type of variant code. The current
-        	values are: 
-        		jis208 - in JIS X 0208 - kuten coding
-        		jis212 - in JIS X 0212 - kuten coding
-        		jis213 - in JIS X 0213 - kuten coding
-        		  (most of the above relate to "shinjitai/kyuujitai" 
-        		  alternative character glyphs)
-        		deroo - De Roo number - numeric
-        		njecd - Halpern NJECD index number - numeric
-        		s_h - The Kanji Dictionary (Spahn & Hadamitzky) - descriptor
-        		nelson_c - "Classic" Nelson - numeric
-        		oneill - Japanese Names (O'Neill) - numeric
-        		ucs - Unicode codepoint- hex
-            '''
-            for val in getattr(misc, 'findall', lambda *args: [])('variant'):
-                char['var_type_{}'.format(
-                    getattr(
-                        val,
-                        'attrib',
-                        {}
-                    ).get('var_type')
-                )] = getattr(val, 'text', '')
-            '''
-            A frequency-of-use ranking. The 2,500 most-used characters have a 
-        	ranking; those characters that lack this field are not ranked. The 
-        	frequency is a number from 1 to 2,500 that expresses the relative 
-        	frequency of occurrence of a character in modern Japanese. This is
-        	based on a survey in newspapers, so it is biassed towards kanji
-        	used in newspaper articles. The discrimination between the less
-        	frequently used kanji is not strong. (Actually there are 2,501
-        	kanji ranked as there was a tie.)
-            '''
-            char['frequency'] = getattr(
-                getattr(
-                    misc,
-                    'find',
-                    lambda *args: None
-                )('freq'),
-                'text',
-                ''
-            )
-            '''
-            When the kanji is itself a radical and has a name, this element
-        	contains the name (in hiragana.)
-            '''
-            char['radical_name'] = getattr(
-                getattr(misc, 'find', lambda *args: None)('rad_name'), 'text', '')
-            '''
-            The (former) Japanese Language Proficiency test level for this kanji. 
-        	Values range from 1 (most advanced) to 4 (most elementary). This field 
-        	does not appear for kanji that were not required for any JLPT level.
-        	Note that the JLPT test levels changed in 2010, with a new 5-level
-        	system (N1 to N5) being introduced. No official kanji lists are
-        	available for the new levels. The new levels are regarded as
-        	being similar to the old levels except that the old level 2 is
-        	now divided between N2 and N3.
-            '''
-            char['jlpt'] = getattr(
-                getattr(
-                    misc,
-                    'find',
-                    lambda *args: None
-                )('jlpt'),
-                'text',
-                ''
-            )
-            '''
-            Each dic_ref contains an index number. The particular dictionary,
-        	etc. is defined by the dr_type attribute.
+    def insert_character(self, char_data: Dict[str, Any]) -> None:
+        """Insert a single character into the database."""
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
 
-        	The dr_type defines the dictionary or reference book, etc. to which
-        	dic_ref element applies. The initial allocation is:
-        	  nelson_c - "Modern Reader's Japanese-English Character Dictionary",  
-        	  	edited by Andrew Nelson (now published as the "Classic" 
-        	  	Nelson).
-        	  nelson_n - "The New Nelson Japanese-English Character Dictionary", 
-        	  	edited by John Haig.
-        	  halpern_njecd - "New Japanese-English Character Dictionary", 
-        	  	edited by Jack Halpern.
-        	  halpern_kkd - "Kodansha Kanji Dictionary", (2nd Ed. of the NJECD)
-        	  	edited by Jack Halpern.
-        	  halpern_kkld - "Kanji Learners Dictionary" (Kodansha) edited by 
-        	  	Jack Halpern.
-        	  halpern_kkld_2ed - "Kanji Learners Dictionary" (Kodansha), 2nd edition
-        	    (2013) edited by Jack Halpern.
-        	  heisig - "Remembering The  Kanji"  by  James Heisig.
-        	  heisig6 - "Remembering The  Kanji, Sixth Ed."  by  James Heisig.
-        	  gakken - "A  New Dictionary of Kanji Usage" (Gakken)
-        	  oneill_names - "Japanese Names", by P.G. O'Neill. 
-        	  oneill_kk - "Essential Kanji" by P.G. O'Neill.
-        	  moro - "Daikanwajiten" compiled by Morohashi. For some kanji two
-        	  	additional attributes are used: m_vol:  the volume of the
-        	  	dictionary in which the kanji is found, and m_page: the page
-        	  	number in the volume.
-        	  henshall - "A Guide To Remembering Japanese Characters" by
-        	  	Kenneth G.  Henshall.
-        	  sh_kk - "Kanji and Kana" by Spahn and Hadamitzky.
-        	  sh_kk2 - "Kanji and Kana" by Spahn and Hadamitzky (2011 edition).
-        	  sakade - "A Guide To Reading and Writing Japanese" edited bysqlparser
-        	  	Florence Sakade.
-        	  jf_cards - Japanese Kanji Flashcards, by Max Hodges and
-        		Tomoko Okazaki. (Series 1)
-        	  henshall3 - "A Guide To Reading and Writing Japanese" 3rd
-        		edition, edited by Henshall, Seeley and De Groot.
-        	  tutt_cards - Tuttle Kanji Cards, compiled by Alexander Kask.
-        	  crowley - "The Kanji Way to Japanese Language Power" by
-        	  	Dale Crowley.
-        	  kanji_in_context - "Kanji in Context" by Nishiguchi and Kono.
-        	  busy_people - "Japanese For Busy People" vols I-III, published
-        		by the AJLT. The codes are the volume.chapter.
-        	  kodansha_compact - the "Kodansha Compact Kanji Guide".
-        	  maniette - codes from Yves Maniette's "Les Kanjis dans la tete" French adaptation of Heisig.
-            '''
-            for val in getattr(character.find("dic_number"), 'findall', lambda *args: [])('dic_ref'):
-                char['dr_type_{}'.format(
-                    getattr(
-                        val,
-                        'attrib',
-                        {}
-                    ).get('dr_type')
-                )] = getattr(val, 'text', '')
-            '''
-            These codes contain information relating to the glyph, and can be used
-        	for finding a required kanji. The type of code is defined by the
-        	qc_type attribute.
-            
-            The q_code contains the actual query-code value, according to the
-        	qc_type attribute.
+            # Prepare column names and values for SQL
+            columns = list(char_data.keys())
+            placeholders = ', '.join(['?' for _ in columns])
+            column_names = ', '.join(columns)
 
-        	The qc_type attribute defines the type of query code. The current values
-        	are:
-        	  skip -  Halpern's SKIP (System  of  Kanji  Indexing  by  Patterns) 
-        	  	code. The  format is n-nn-nn.  See the KANJIDIC  documentation 
-        	  	for  a description of the code and restrictions on  the 
-        	  	commercial  use  of this data. [P]  There are also
-        		a number of misclassification codes, indicated by the
-        		"skip_misclass" attribute.
-        	  sh_desc - the descriptor codes for The Kanji Dictionary (Tuttle 
-        	  	1996) by Spahn and Hadamitzky. They are in the form nxnn.n,  
-        	  	e.g.  3k11.2, where the  kanji has 3 strokes in the 
-        	  	identifying radical, it is radical "k" in the SH 
-        	  	classification system, there are 11 other strokes, and it is 
-        	  	the 2nd kanji in the 3k11 sequence. (I am very grateful to 
-        	  	Mark Spahn for providing the list of these descriptor codes 
-        	  	for the kanji in this file.) [I]
-        	  four_corner - the "Four Corner" code for the kanji. This is a code 
-        	  	invented by Wang Chen in 1928. See the KANJIDIC documentation 
-        	  	for  an overview of  the Four Corner System. [Q]
-        
-        	  deroo - the codes developed by the late Father Joseph De Roo, and 
-        	  	published in  his book "2001 Kanji" (Bonjinsha). Fr De Roo 
-        	  	gave his permission for these codes to be included. [DR]
-        	  misclass - a possible misclassification of the kanji according
-        		to one of the code types. (See the "Z" codes in the KANJIDIC
-        		documentation for more details.)
-        	  
-        	The values of this attribute indicate the type if
-        	misclassification:
-        	- posn - a mistake in the division of the kanji
-        	- stroke_count - a mistake in the number of strokes
-        	- stroke_and_posn - mistakes in both division and strokes
-        	- stroke_diff - ambiguous stroke counts depending on glyph
-            '''
-            for val in getattr(character.find("query_code"), 'findall', lambda *args: [])('q_code'):
-                char['qc_type_{}'.format(
-                    getattr(
-                        val,
-                        'attrib',
-                        {}
-                    ).get('qc_type')
-                )] = getattr(val, 'text', '')
-            '''
-            The readings for the kanji in several languages, and the meanings, also
-        	in several languages. The readings and meanings are grouped to enable
-        	the handling of the situation where the meaning is differentiated by 
-        	reading.
-            '''
-            reading_meaning = character.find('reading_meaning')
-            '''
-            rmgroup (reading*, meaning*)
-            '''
-            rm_group = getattr(
-                reading_meaning,
-                'find',
-                lambda *args: None
-            )('rmgroup')
-            '''
-            The r_type attribute defines the type of reading in the reading
-        	element. The current values are:
-        	  pinyin - the modern PinYin romanization of the Chinese reading 
-        	  	of the kanji. The tones are represented by a concluding 
-        	  	digit. [Y]
-        	  korean_r - the romanized form of the Korean reading(s) of the 
-        	  	kanji.  The readings are in the (Republic of Korea) Ministry 
-        	  	of Education style of romanization. [W]
-        	  korean_h - the Korean reading(s) of the kanji in hangul.
-        	  vietnam - the Vietnamese readings supplied by Minh Chau Pham.
-        	  ja_on - the "on" Japanese reading of the kanji, in katakana. 
-        	  	Another attribute r_status, if present, will indicate with
-        	  	a value of "jy" whether the reading is approved for a
-        	  	"Jouyou kanji".
-        		A further attribute on_type, if present,  will indicate with 
-        		a value of kan, go, tou or kan'you the type of on-reading.
-        	  ja_kun - the "kun" Japanese reading of the kanji, usually in 
-        		hiragana. 
-        	  	Where relevant the okurigana is also included separated by a 
-        	  	".". Readings associated with prefixes and suffixes are 
-        	  	marked with a "-". A second attribute r_status, if present, 
-        	  	will indicate with a value of "jy" whether the reading is 
-        	  	approved for a "Jouyou kanji".
-            '''
-            for val in getattr(rm_group, 'findall', lambda *args: [])('reading'):
-                current_val = list(
-                    char.get('reading_type_{}'.format(
-                        getattr(
-                            val,
-                            'attrib',
-                            {}
-                        ).get('r_type')
-                    ), '')
+            # Create the SQL query
+            sql = f'INSERT INTO library ({column_names}) VALUES ({placeholders})'
+
+            # Execute with values as parameters
+            cur.execute(sql, list(char_data.values()))
+            conn.commit()
+
+
+class CharacterParser:
+    """Handles parsing of individual character data from XML elements."""
+
+    def __init__(self, svg_path: Path):
+        self.svg_path = svg_path
+
+    def parse_basic_info(self, element: ET.Element) -> Dict[str, str]:
+        """Parse basic character information from XML element."""
+        char: Dict[str, str] = {}
+
+        literal_elem = element.find("literal")
+        char['literal'] = literal_elem.text if literal_elem is not None else ''
+
+        literal_text = literal_elem.text if literal_elem is not None else ''
+        char['bytes'] = '/'.join(
+            hex(b) for b in list(literal_text.encode('utf-8'))
+        )
+
+        return char
+
+    def parse_codepoint_info(self, element: ET.Element, character: Dict[str, str]) -> None:
+        """Parse codepoint information from XML element."""
+        codepoint = element.find("codepoint")
+        for val in codepoint.findall('cp_value') if codepoint is not None else []:
+            cp_type = val.attrib.get('cp_type')
+            if cp_type:
+                character[f'cp_type_{cp_type}'] = val.text or ''
+
+    def parse_radical_info(self, element: ET.Element, character: Dict[str, str]) -> None:
+        """Parse radical information from XML element."""
+        radical = element.find("radical")
+        for val in radical.findall('rad_value') if radical is not None else []:
+            rad_type = val.attrib.get('rad_type')
+            if rad_type:
+                character[f'rad_type_{rad_type}'] = val.text or ''
+
+    def parse_misc_info(self, element: ET.Element, character: Dict[str, str]) -> None:
+        """Parse miscellaneous character information from XML element."""
+        if (misc := element.find('misc')) is None:
+            return
+
+        # Grade level
+        grade_elem = misc.find('grade')
+        character['grade'] = grade_elem.text if grade_elem is not None else ''
+
+        # Stroke count
+        stroke_elem = misc.find('stroke_count')
+        character['stroke_count'] = stroke_elem.text if stroke_elem is not None else ''
+
+        # Variants
+        for val in misc.findall('variant'):
+            var_type = val.attrib.get('var_type')
+            if var_type:
+                character[f'var_type_{var_type}'] = val.text or ''
+
+        # Frequency
+        freq_elem = misc.find('freq')
+        character['frequency'] = freq_elem.text if freq_elem is not None else ''
+
+        # Radical name
+        rad_name_elem = misc.find('rad_name')
+        character['radical_name'] = rad_name_elem.text if rad_name_elem is not None else ''
+
+        # JLPT level
+        jlpt_elem = misc.find('jlpt')
+        character['jlpt'] = jlpt_elem.text if jlpt_elem is not None else ''
+
+    def parse_dictionary_references(self, element: ET.Element, character: Dict[str, str]) -> None:
+        """Parse dictionary reference information from XML element."""
+        dic_number = element.find("dic_number")
+        for val in dic_number.findall('dic_ref') if dic_number is not None else []:
+            dr_type = val.attrib.get('dr_type')
+            if dr_type:
+                character[f'dr_type_{dr_type}'] = val.text or ''
+
+    def parse_query_codes(self, element: ET.Element, character: Dict[str, str]) -> None:
+        """Parse query code information from XML element."""
+        query_code = element.find("query_code")
+        for val in query_code.findall('q_code') if query_code is not None else []:
+            qc_type = val.attrib.get('qc_type')
+            if qc_type:
+                character[f'qc_type_{qc_type}'] = val.text or ''
+
+    def parse_readings_and_meanings(self, element: ET.Element, character: Dict[str, Any]) -> None:
+        """Parse readings and meanings information from XML element."""
+        if (reading_meaning := element.find('reading_meaning')) is None:
+            return
+
+        rm_group = reading_meaning.find('rmgroup')
+        for val in rm_group.findall('reading') if rm_group is not None else []:
+            r_type = val.attrib.get('r_type')
+            if r_type:
+                current_val: List[str] = list(
+                    character.get(f'reading_type_{r_type}', '')
                 )
-                char['reading_type_{}'.format(
-                    getattr(
-                        val,
-                        'attrib',
-                        {}
-                    ).get('r_type')
-                )] = current_val + [getattr(val, 'text', '')]
-            '''
-            The meaning associated with the kanji.
-
-        	The m_lang attribute defines the target language of the meaning. It 
-        	will be coded using the two-letter language code from the ISO 639-1 
-        	standard. When absent, the value "en" (i.e. English) is implied.
-            '''
-            for val in getattr(rm_group, 'findall', lambda *args: [])('meaning'):
-                current_val = list(
-                    char.get('meaning_type_{}'.format(
-                        getattr(
-                            val,
-                            'attrib',
-                            {}
-                        ).get('m_lang', 'en')
-                    ), '')
+                character[f'reading_type_{r_type}'] = (
+                    current_val + [val.text or '']
                 )
-                char['meaning_type_{}'.format(
-                    getattr(
-                        val,
-                        'attrib',
-                        {}
-                    ).get('m_lang', 'en')
-                )] = current_val + [getattr(val, 'text', '')]
-            '''
-            Japanese readings that are now only associated with names.
-            '''
-            char['nanori'] = [getattr(n, 'text', '') for n in getattr(
-                reading_meaning, 'findall', lambda *args: [])('nanori')]
-            '''
-            Names of svg files with the strike order for given kanji character.
-            Each svg file is being base64 encoded and saved into db.
-            '''
-            char['svg'] = [
-                fname.name for fname in SVG_FILES()
-                if char.get('cp_type_ucs').casefold() in fname.name.casefold()
-            ]
-            for no, svg in enumerate(char.get('svg', [])):
-                char[f'img_{no}'] = base64.b64encode(
-                    (SVG_PATH / svg).read_bytes()
+
+        for val in rm_group.findall('meaning') if rm_group is not None else []:
+            m_lang = val.attrib.get('m_lang', 'en')
+            current_val: List[str] = list(
+                character.get(f'meaning_type_{m_lang}', '')
+            )
+            character[f'meaning_type_{m_lang}'] = (
+                current_val + [val.text or '']
+            )
+
+        # Parse nanori (name readings)
+        nanori_elements = reading_meaning.findall('nanori')
+        character['nanori'] = [elem.text or '' for elem in nanori_elements]
+
+    def parse_svg_files(self, character: Dict[str, Any]) -> None:
+        """Parse SVG files for the character and encode them as base64."""
+        if not (cp_type_ucs := character.get('cp_type_ucs', '')):
+            character['svg'] = []
+            return
+
+        character['svg'] = [
+            fname.name for fname in self.svg_path.glob("*.svg")
+            if cp_type_ucs.casefold() in fname.name.casefold()
+        ]
+
+        # Encode SVG files as base64
+        for no, svg in enumerate(character.get('svg', [])):
+            if (svg_file_path := self.svg_path / svg).exists():
+                character[f'img_{no}'] = base64.b64encode(
+                    svg_file_path.read_bytes()
                 ).decode()
-            '''
-            List of radicals used for construction of given kanji character.
-            '''
-            char['radicals'] = radicals.get(char.get('literal'), [])
-            # insert into database (only if svg file exists)
-            assert char.get('cp_type_ucs') and char.get('literal'), \
-                'Missing primary key.'
 
+    def parse_character(self, element: ET.Element, radicals: Dict[str, List[str]]) -> Dict[str, Any]:
+        """Parse a complete character element from the KANJIDIC XML."""
+        character: Dict[str, Any] = {}
+
+        # Parse all character information
+        character.update(self.parse_basic_info(element))
+        self.parse_codepoint_info(element, character)
+        self.parse_radical_info(element, character)
+        self.parse_misc_info(element, character)
+        self.parse_dictionary_references(element, character)
+        self.parse_query_codes(element, character)
+        self.parse_readings_and_meanings(element, character)
+        self.parse_svg_files(character)
+
+        # Add radicals information
+        literal = character.get('literal', '')
+        character['radicals'] = radicals.get(literal, [])
+
+        return character
+
+
+class DataProcessor:
+    """Handles data processing and encoding for database storage."""
+
+    @staticmethod
+    def sqlparser(**kwargs: Any) -> Dict[str, str]:
+        """
+        Parse data before inserting into the SQL database.
+
+        This function handles data encoding and conversion for database storage:
+        - Lists are joined with newlines and base64 encoded
+        - Non-ASCII strings are base64 encoded
+        - ASCII strings are left unchanged
+        - Empty/None values are filtered out
+        """
+        new_kwargs: Dict[str, str] = {}
+        for key, val in kwargs.items():
+            if not val:
+                continue
+            if isinstance(val, list):
+                new_kwargs[key] = base64.b64encode('\n'.join(val).encode()).decode()
+            elif len(val) == len(val.encode()):
+                new_kwargs[key] = val
+            else:
+                new_kwargs[key] = base64.b64encode(val.encode()).decode()
+        return new_kwargs
+
+
+class KanjiDatabaseBuilder:
+    """Main class that orchestrates the entire database building process."""
+
+    def __init__(self):
+        self.path_manager = PathManager()
+        self.radical_loader = RadicalLoader(self.path_manager.paths.lex_path)
+        self.schema = DatabaseSchema()
+        self.db_manager = DatabaseManager(self.path_manager.paths.db_path, self.schema)
+        self.character_parser = CharacterParser(self.path_manager.paths.svg_path)
+        self.data_processor = DataProcessor()
+
+    def load_xml_data(self) -> List[ET.Element]:
+        """Load and parse the KANJIDIC XML file."""
+        logger.info("Parsing kanjidic XML...")
+        tree: ET.ElementTree = ET.parse(self.path_manager.paths.lex_path / "kanjidic2.xml")
+        root: ET.Element = tree.getroot()
+        characters: List[ET.Element] = root.findall('character')
+        logger.info(f"Found {len(characters)} characters in XML")
+        return characters
+
+    def process_characters(self, characters: List[ET.Element], radicals: Dict[str, List[str]]) -> None:
+        """Process all characters and insert them into the database."""
+        logger.info(f"Processing {len(characters)} characters...")
+
+        processed_count = 0
+        for character in tqdm.tqdm(characters, desc="Processing characters"):
+            char: Dict[str, Any] = self.character_parser.parse_character(character, radicals)
+
+            # Validate primary key
+            assert (
+                char.get('cp_type_ucs') and char.get('literal')
+            ), 'Missing primary key.'
+
+            # Insert into database (only if svg file exists)
             if char.get('svg'):
-                char = sqlparser(**char)
-                cur.execute(
-                    '''INSERT INTO library ({})
-                    VALUES ("{}");'''.format(
-                        '\n\t, '.join(char.keys()),
-                        '"\n\t, "'.join(char.values())
-                    )
-                )
-            bar.update(idx)
-        conn.commit()
+                char = self.data_processor.sqlparser(**char)
+                self.db_manager.insert_character(char)
+                processed_count += 1
+
+        logger.info(f"Successfully processed {processed_count} characters with SVG files")
+
+    def build_database(self) -> None:
+        """Main method to build the complete kanji database."""
+        logger.info("Starting database build process...")
+        logger.info(f"Database will be created at: {self.path_manager.paths.db_path}")
+
+        # Load radicals
+        radicals = self.radical_loader.load_all_radicals()
+
+        # Create database tables
+        self.db_manager.create_tables()
+
+        # Load and process XML data
+        characters = self.load_xml_data()
+        self.process_characters(characters, radicals)
+
+        logger.info("Database build completed successfully!")
+
+
+def main() -> None:
+    """Main function to orchestrate the complete database building process."""
+    builder = KanjiDatabaseBuilder()
+    builder.build_database()
+
+
+if __name__ == "__main__":
+    main()
