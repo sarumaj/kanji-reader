@@ -208,7 +208,23 @@ class RadicalLoader:
         return radicals
 
     def extend_from_radkfilex(self, radicals: Dict[str, List[str]]) -> Dict[str, List[str]]:
-        """Extend radicals dictionary using radkfilex.utf8 file."""
+        """
+        Extend radicals dictionary using radkfilex.utf8 file.
+
+        The radkfilex.utf8 file provides additional radical information that extends
+        the base kradfile2 data. It uses a different format with clusters separated
+        by '$' characters. Each cluster contains a radical followed by kanji that
+        use that radical.
+
+        This function parses the radkfilex format and adds any missing radical
+        relationships to the existing radicals dictionary.
+
+        Args:
+            radicals (Dict[str, List[str]]): Existing radicals dictionary to extend.
+
+        Returns:
+            Dict[str, List[str]]: Extended radicals dictionary with additional mappings.
+        """
         radkfilex_path = self.lex_path / "radkfilex.utf8"
         clusters: List[str] = []
 
@@ -251,16 +267,44 @@ class RadicalLoader:
 
 
 class DatabaseManager:
-    """Manages database creation and operations."""
+    """
+    Manages database creation and operations for the kanji database.
+
+    This class is responsible for:
+    - Creating the SQLite database tables (settings and library)
+    - Inserting kanji character data into the library table
+    - Managing schema configuration and table structure
+    """
 
     def __init__(self, db_path: Path, schema: DatabaseSchema):
+        """
+        Initialize the DatabaseManager.
+
+        Args:
+            db_path (Path): Path to the SQLite database file.
+            schema (DatabaseSchema): Schema configuration for the library table.
+        """
         self.db_path = db_path
         self.schema = schema
 
     def create_tables(self) -> None:
-        """Create the database tables for the kanji database."""
-        logger.info("Creating database tables...")
+        """
+        Create the database tables for the kanji database.
 
+        This method creates two tables:
+        1. 'settings' table: Stores application configuration and UI state.
+        2. 'library' table: Stores all kanji character data, with schema defined by the DatabaseSchema dataclass.
+
+        The library table schema is dynamically generated based on the schema configuration. Each field can be:
+        - Primary key (NOT NULL constraint)
+        - Regular text field (allows NULL)
+        - BLOB field (for image data)
+
+        Note:
+            This method will drop existing tables if they exist, ensuring a clean database creation.
+            The settings table is populated with default values.
+        """
+        logger.info("Creating database tables...")
         with sqlite3.connect(self.db_path) as conn:
             cur = conn.cursor()
 
@@ -315,7 +359,16 @@ class DatabaseManager:
         logger.info("Database tables created successfully")
 
     def insert_character(self, char_data: Dict[str, Any]) -> None:
-        """Insert a single character into the database."""
+        """
+        Insert a single kanji character record into the library table.
+
+        Args:
+            char_data (Dict[str, Any]):
+                Dictionary containing character data, with keys matching the library table columns.
+
+        Note:
+            The data should be pre-processed and encoded as needed (e.g., using DataProcessor.sqlparser).
+        """
         with sqlite3.connect(self.db_path) as conn:
             cur = conn.cursor()
 
@@ -333,27 +386,58 @@ class DatabaseManager:
 
 
 class CharacterParser:
-    """Handles parsing of individual character data from XML elements."""
+    """
+    Handles parsing of individual kanji character data from XML elements.
+
+    This class provides methods to extract all relevant information from a <character> XML element,
+    including basic info, codepoints, radicals, miscellaneous metadata, dictionary references,
+    query codes, readings, meanings, and SVG stroke order files.
+    """
 
     def __init__(self, svg_path: Path):
+        """
+        Initialize the CharacterParser.
+
+        Args:
+            svg_path (Path): Path to the directory containing SVG stroke order files.
+        """
         self.svg_path = svg_path
 
     def parse_basic_info(self, element: ET.Element) -> Dict[str, str]:
-        """Parse basic character information from XML element."""
-        char: Dict[str, str] = {}
+        """
+        Parse basic character information from an XML element.
 
+        Extracts:
+        - literal: The actual kanji character in UTF-8
+        - bytes: Hexadecimal representation of the UTF-8 bytes
+
+        Args:
+            element (ET.Element): XML element containing character data.
+
+        Returns:
+            Dict[str, str]: Dictionary with basic character information.
+        """
+        char: Dict[str, str] = {}
         literal_elem = element.find("literal")
         char['literal'] = literal_elem.text if literal_elem is not None else ''
-
         literal_text = literal_elem.text if literal_elem is not None else ''
-        char['bytes'] = '/'.join(
-            hex(b) for b in list(literal_text.encode('utf-8'))
-        )
-
+        char['bytes'] = '/'.join(hex(b) for b in list(literal_text.encode('utf-8')))
         return char
 
     def parse_codepoint_info(self, element: ET.Element, character: Dict[str, str]) -> None:
-        """Parse codepoint information from XML element."""
+        """
+        Parse codepoint information from an XML element and update the character dictionary in-place.
+
+        Extracts codepoint data for various character encoding standards:
+        - jis208: JIS X 0208-1997 kuten coding
+        - jis212: JIS X 0212-1990 kuten coding
+        - jis213: JIS X 0213-2000 kuten coding
+        - ucs: Unicode 4.0 hex coding
+
+        Args:
+            element (ET.Element): XML element containing character data.
+            character (Dict[str, str]): Dictionary to store parsed codepoint information.
+        """
         codepoint = element.find("codepoint")
         for val in codepoint.findall('cp_value') if codepoint is not None else []:
             cp_type = val.attrib.get('cp_type')
@@ -361,7 +445,17 @@ class CharacterParser:
                 character[f'cp_type_{cp_type}'] = val.text or ''
 
     def parse_radical_info(self, element: ET.Element, character: Dict[str, str]) -> None:
-        """Parse radical information from XML element."""
+        """
+        Parse radical information from an XML element and update the character dictionary in-place.
+
+        Extracts radical classification data for different systems:
+        - classical: Based on KangXi Zidian system
+        - nelson_c: Nelson "Modern Reader's Japanese-English Character Dictionary"
+
+        Args:
+            element (ET.Element): XML element containing character data.
+            character (Dict[str, str]): Dictionary to store parsed radical information.
+        """
         radical = element.find("radical")
         for val in radical.findall('rad_value') if radical is not None else []:
             rad_type = val.attrib.get('rad_type')
@@ -369,38 +463,48 @@ class CharacterParser:
                 character[f'rad_type_{rad_type}'] = val.text or ''
 
     def parse_misc_info(self, element: ET.Element, character: Dict[str, str]) -> None:
-        """Parse miscellaneous character information from XML element."""
+        """
+        Parse miscellaneous character information from an XML element and update the character dictionary in-place.
+
+        Extracts:
+        - grade: Japanese school grade level (1-6, 8, 9, 10)
+        - stroke_count: Number of strokes in the character
+        - variant: Alternative character forms and codes
+        - frequency: Usage frequency ranking (1-2500)
+        - radical_name: Name of the radical in hiragana
+        - jlpt: Japanese Language Proficiency Test level (1-4)
+
+        Args:
+            element (ET.Element): XML element containing character data.
+            character (Dict[str, str]): Dictionary to store parsed miscellaneous information.
+        """
         if (misc := element.find('misc')) is None:
             return
-
-        # Grade level
         grade_elem = misc.find('grade')
         character['grade'] = grade_elem.text if grade_elem is not None else ''
-
-        # Stroke count
         stroke_elem = misc.find('stroke_count')
         character['stroke_count'] = stroke_elem.text if stroke_elem is not None else ''
-
-        # Variants
         for val in misc.findall('variant'):
             var_type = val.attrib.get('var_type')
             if var_type:
                 character[f'var_type_{var_type}'] = val.text or ''
-
-        # Frequency
         freq_elem = misc.find('freq')
         character['frequency'] = freq_elem.text if freq_elem is not None else ''
-
-        # Radical name
         rad_name_elem = misc.find('rad_name')
         character['radical_name'] = rad_name_elem.text if rad_name_elem is not None else ''
-
-        # JLPT level
         jlpt_elem = misc.find('jlpt')
         character['jlpt'] = jlpt_elem.text if jlpt_elem is not None else ''
 
     def parse_dictionary_references(self, element: ET.Element, character: Dict[str, str]) -> None:
-        """Parse dictionary reference information from XML element."""
+        """
+        Parse dictionary reference information from an XML element and update the character dictionary in-place.
+
+        Extracts reference numbers for various kanji dictionaries and learning resources.
+
+        Args:
+            element (ET.Element): XML element containing character data.
+            character (Dict[str, str]): Dictionary to store parsed dictionary references.
+        """
         dic_number = element.find("dic_number")
         for val in dic_number.findall('dic_ref') if dic_number is not None else []:
             dr_type = val.attrib.get('dr_type')
@@ -408,7 +512,20 @@ class CharacterParser:
                 character[f'dr_type_{dr_type}'] = val.text or ''
 
     def parse_query_codes(self, element: ET.Element, character: Dict[str, str]) -> None:
-        """Parse query code information from XML element."""
+        """
+        Parse query code information from an XML element and update the character dictionary in-place.
+
+        Extracts various indexing and lookup codes for finding kanji:
+        - skip: Halpern's SKIP (System of Kanji Indexing by Patterns)
+        - sh_desc: Spahn & Hadamitzky descriptor codes
+        - four_corner: Four Corner code system
+        - deroo: De Roo number system
+        - misclass: Possible misclassification codes
+
+        Args:
+            element (ET.Element): XML element containing character data.
+            character (Dict[str, str]): Dictionary to store parsed query codes.
+        """
         query_code = element.find("query_code")
         for val in query_code.findall('q_code') if query_code is not None else []:
             qc_type = val.attrib.get('qc_type')
@@ -416,10 +533,18 @@ class CharacterParser:
                 character[f'qc_type_{qc_type}'] = val.text or ''
 
     def parse_readings_and_meanings(self, element: ET.Element, character: Dict[str, Any]) -> None:
-        """Parse readings and meanings information from XML element."""
+        """
+        Parse readings and meanings information from an XML element and update the character dictionary in-place.
+
+        Extracts readings (ja_on, ja_kun, pinyin, korean, vietnamese) and meanings (in multiple languages),
+        as well as nanori (name readings).
+
+        Args:
+            element (ET.Element): XML element containing character data.
+            character (Dict[str, Any]): Dictionary to store parsed readings and meanings.
+        """
         if (reading_meaning := element.find('reading_meaning')) is None:
             return
-
         rm_group = reading_meaning.find('rmgroup')
         for val in rm_group.findall('reading') if rm_group is not None else []:
             r_type = val.attrib.get('r_type')
@@ -430,7 +555,6 @@ class CharacterParser:
                 character[f'reading_type_{r_type}'] = (
                     current_val + [val.text or '']
                 )
-
         for val in rm_group.findall('meaning') if rm_group is not None else []:
             m_lang = val.attrib.get('m_lang', 'en')
             current_val: List[str] = list(
@@ -439,22 +563,34 @@ class CharacterParser:
             character[f'meaning_type_{m_lang}'] = (
                 current_val + [val.text or '']
             )
-
         # Parse nanori (name readings)
         nanori_elements = reading_meaning.findall('nanori')
         character['nanori'] = [elem.text or '' for elem in nanori_elements]
 
     def parse_svg_files(self, character: Dict[str, Any]) -> None:
-        """Parse SVG files for the character and encode them as base64."""
+        """
+        Parse SVG files for the character and encode them as base64.
+
+        Finds SVG stroke order files that match the character's Unicode codepoint
+        and encodes them as base64 strings for database storage.
+        SVG files are named using the Unicode codepoint (e.g., "4e00.svg" for character "一").
+
+        The function:
+        1. Looks for SVG files containing the character's UCS codepoint
+        2. Encodes each SVG file as base64
+        3. Stores the encoded data with keys 'img_0', 'img_1', etc.
+        4. Stores the list of SVG filenames in the 'svg' key
+
+        Args:
+            character (Dict[str, Any]): Dictionary containing character data (must have 'cp_type_ucs').
+        """
         if not (cp_type_ucs := character.get('cp_type_ucs', '')):
             character['svg'] = []
             return
-
         character['svg'] = [
             fname.name for fname in self.svg_path.glob("*.svg")
             if cp_type_ucs.casefold() in fname.name.casefold()
         ]
-
         # Encode SVG files as base64
         for no, svg in enumerate(character.get('svg', [])):
             if (svg_file_path := self.svg_path / svg).exists():
