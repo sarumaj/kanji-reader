@@ -1,6 +1,6 @@
 cairocffi==1.6.1
 CairoSVG==2.7.1
-cffi==1.15.1
+cffi==1.17.1
 cssselect2==0.7.0
 defusedxml==0.7.1
 Pillow==10.0.1
