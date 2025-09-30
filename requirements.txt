@@ -11,7 +11,7 @@ pyperclip==1.8.2
 pystray==0.19.5
 python-utils==3.7.0
 python-xlib==0.33
-six==1.16.0
+six==1.17.0
 tinycss2==1.2.1
 typing_extensions==4.7.1
 webencodings==0.5.1
