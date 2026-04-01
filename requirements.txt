@@ -1,19 +1,19 @@
-cairocffi<=1.6.1
-CairoSVG<=2.7.1
-cffi<=1.15.1
-cssselect2<=0.7.0
+cairocffi<=1.7.1
+CairoSVG<=2.9.0
+cffi<=1.17.1
+cssselect2<=0.9.0
 defusedxml<=0.7.1
-Pillow<=10.0.1
-progressbar2<=4.2.0
-psutil<=5.9.5
+Pillow<=10.4.0
+progressbar2<=4.5.0
+psutil<=5.9.8
 pycparser<=3.0
-pyperclip<=1.8.2
-pystray<=0.19.4
-python-utils<=3.7.0
+pyperclip<=1.11.0
+pystray<=0.19.5
+python-utils<=3.9.1
 python-xlib<=0.33
-six<=1.16.0
-tinycss2<=1.2.1
-typing_extensions<=4.7.1
+six<=1.17.0
+tinycss2<=1.5.1
+typing_extensions<=4.15.0
 webencodings<=0.5.1
-WMI<=1.4.9; sys_platform <= 'win32'
+WMI<=1.5.1; sys_platform <= 'win32'
 pywin32<=306; sys_platform <= 'win32'qq
